@@ -35,6 +35,11 @@ pub mod agent_court_escrow {
         timeout_seconds: i64,
     ) -> Result<()> {
         require!(amount > 0, AgentCourtError::ZeroAmount);
+        let judge = ctx.accounts.judge.key();
+        require!(
+            judge != ctx.accounts.agent_a.key() && judge != ctx.accounts.agent_b.key(),
+            AgentCourtError::InvalidJudge
+        );
         require!(
             timeout_seconds >= MIN_TIMEOUT_SECONDS && timeout_seconds <= MAX_TIMEOUT_SECONDS,
             AgentCourtError::InvalidTimeout
@@ -63,6 +68,7 @@ pub mod agent_court_escrow {
         escrow.evidence_hashes_b = [[0u8; HASH_LEN]; MAX_EVIDENCE_PER_PARTY];
         escrow.bump = ctx.bumps.escrow;
         escrow.vault_bump = ctx.bumps.vault;
+        escrow.judge = judge;
 
         transfer_checked(
             CpiContext::new(
@@ -431,6 +437,9 @@ pub struct Deposit<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
+
+    /// CHECK: Only its address is stored; it must sign render_verdict for this escrow.
+    pub judge: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -467,6 +476,7 @@ pub struct RenderVerdict<'info> {
         mut,
         seeds = [b"escrow", escrow.agent_a.as_ref(), escrow.agent_b.as_ref(), escrow.service_hash.as_ref()],
         bump = escrow.bump,
+        constraint = escrow.judge == judge.key() @ AgentCourtError::Unauthorized,
     )]
     pub escrow: Box<Account<'info, Escrow>>,
 }
@@ -582,11 +592,12 @@ pub struct Escrow {
     pub evidence_hashes_b: [[u8; HASH_LEN]; MAX_EVIDENCE_PER_PARTY],
     pub bump: u8,
     pub vault_bump: u8,
+    pub judge: Pubkey,
 }
 
 impl Escrow {
-    // 8 (disc) + 32*3 + 8 + 32 + 1 + 8*3 + 1 + 2*2 + 1*2 + 32*5*2 + 1*2 = 498
-    pub const LEN: usize = 8 + 96 + 8 + 32 + 1 + 24 + 1 + 4 + 2 + 320 + 2;
+    // 8 (disc) + 32*3 + 8 + 32 + 1 + 8*3 + 1 + 2*2 + 1*2 + 32*5*2 + 1*2 + 32 = 530
+    pub const LEN: usize = 8 + 96 + 8 + 32 + 1 + 24 + 1 + 4 + 2 + 320 + 2 + 32;
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -683,4 +694,6 @@ pub enum AgentCourtError {
     InvalidSplit,
     #[msg("Verdict::None is not a valid verdict")]
     InvalidVerdict,
+    #[msg("Judge must be a third party, not agent A or agent B")]
+    InvalidJudge,
 }

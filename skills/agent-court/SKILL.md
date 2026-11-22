@@ -144,6 +144,7 @@ const timeoutSeconds = new anchor.BN(86_400); // 24 hours
 const agentA = wallet.publicKey;
 const agentB = new PublicKey("AGENT_B_PUBKEY_HERE");
 const mint = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // devnet USDC
+const judge = new PublicKey("JUDGE_PUBKEY_HERE"); // must not be agent A or agent B
 
 const [escrow] = findEscrowPDA(agentA, agentB, serviceHash);
 const [vault] = findVaultPDA(escrow);
@@ -161,6 +162,7 @@ const tx = await program.methods
     tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
     associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
     systemProgram: anchor.web3.SystemProgram.programId,
+    judge,
   })
   .rpc();
 
@@ -212,7 +214,7 @@ console.log("Evidence submitted:", tx);
 
 ## Render Verdict
 
-A judge signs this instruction to resolve the dispute. The judge is any signer -- in Agent Court, this is a judge-agent keypair controlled by the arbitration panel.
+A judge signs this instruction to resolve the dispute. The signer must be the `judge` recorded on the escrow at deposit time -- in Agent Court, this is a judge-agent keypair controlled by the arbitration panel. Agent A and agent B cannot be the judge.
 
 ### Release (pay service provider)
 
@@ -337,6 +339,7 @@ console.log("Timeout release:", tx);
 | `evidence_hashes_b` | `[[u8; 32]; 5]` | Evidence hashes from agent_b |
 | `bump` | `u8` | Escrow PDA bump |
 | `vault_bump` | `u8` | Vault PDA bump |
+| `judge` | `Pubkey` | Only key allowed to sign `render_verdict` (set at deposit) |
 
 ### Error Codes
 
@@ -352,6 +355,7 @@ console.log("Timeout release:", tx);
 | 6007 | `EvidenceFull` | Evidence submission limit reached for this party (max 5) |
 | 6008 | `InvalidSplit` | Split basis points must sum to 10,000 |
 | 6009 | `InvalidVerdict` | `Verdict::None` is not a valid verdict |
+| 6010 | `InvalidJudge` | Judge must be a third party, not agent A or agent B |
 
 ### Events
 
